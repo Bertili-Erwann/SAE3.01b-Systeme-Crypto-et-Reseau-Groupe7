@@ -1,0 +1,2 @@
+class Fou:
+    role : str

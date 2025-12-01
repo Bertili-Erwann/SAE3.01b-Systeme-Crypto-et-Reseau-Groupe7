@@ -1,0 +1,2 @@
+class Cavalier:
+    role : str

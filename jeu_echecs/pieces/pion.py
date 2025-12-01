@@ -1,0 +1,2 @@
+class Pion:
+    role : str
