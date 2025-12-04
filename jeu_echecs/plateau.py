@@ -1,8 +1,13 @@
 
-class Plateau:
+import Piece
 
-    def __init__(self, longueur : int, largeur: int):
-        self.taille = [longueur, largeur]
-        self.etat_partie= ""
-        self.pieces  = []
-
+class Plateau(object):
+    def init():
+        pass
+        
+    def __init__(self):
+        self. = None
+        self. = Case()
+        self.dimensions = 8
+        pass
+    
