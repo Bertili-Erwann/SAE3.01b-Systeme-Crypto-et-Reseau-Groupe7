@@ -7,9 +7,19 @@ class Jeu():
     def __init__(self):
         self.plateau = chess.Board()
 
+    def reset_plateau(self):
+        self.plateau = chess.Board()
+
     def affiche_plateau(self):
         print(self.plateau)
-
+        
+    def revanche(self,jB,jN) -> None:
+        if(jB.revanche() and jN.revanche()):
+            self.reset_plateau()
+            self.lance_partie(jB,jN) # je fais expres de les inverser
+        else:
+            print(f"La partie s'achève avec un score de {jN.get_score()} - {jB.get_score()}")
+            
     def lance_partie(self, jB, jN) -> None:
         while not self.plateau.is_checkmate() and not self.plateau.is_stalemate():
             for j in [jB,jN]:
@@ -23,6 +33,7 @@ class Jeu():
                 self.plateau.push(move)
                 if j == jB and (self.plateau.is_checkmate() or self.plateau.is_stalemate()):
                     break
+                
         #Le resultat du match 
         resultat = self.plateau.outcome()
         match resultat.termination  :
@@ -38,14 +49,9 @@ class Jeu():
             case chess.Termination.STALEMATE: 
                 print("Match nulle !")
                 print(f"{jB.get_score()} - {jN.get_score()}")
-        self.revanche(jB,jN)            
         
-    def revanche(self,jB,jN) -> None:
-        if(jB.revanche() and jN.revanche()):
-            self.lance_partie(jN,jB) # je fais expres de les inverser
-        else:
-            print(f"La partie s'achève avec un score de {jN.get_score()} - {jB.get_score()}")
-            
+        self.revanche(jB,jN)            
+
 class Joueur():
 
     def __init__(self, couleur):
@@ -69,14 +75,9 @@ class Joueur():
         while True:
             demande = input("Voulez vous prendre votre revanche ? (O)ui/(N)on ")
             match demande.lower():
-                case "o":
-                    continue
-                case "oui": 
-                    self.couleur = "blanc" if self.couleur == "noir" else self.couleur = "noir"
+                case "o"|"oui": 
                     return True
-                case "n":
-                    continue
-                case "non": 
+                case "n"|"non": 
                     return False
                 case _default:
                     print(f"{demande.lower()} n'est pas une reponse attendu")
@@ -95,6 +96,7 @@ if __name__ == "__main__":
     blanc = Joueur("blanc")
     noir = Joueur("noir")
     j.lance_partie(blanc, noir)
+    
 # f2 f3 
 # e7 e6       
 # g2 g4 
