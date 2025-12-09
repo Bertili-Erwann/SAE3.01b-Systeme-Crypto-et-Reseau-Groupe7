@@ -18,9 +18,14 @@ class Jeu():
                 chess.parse_square("a2"), chess.parse_square("a8")
             )  # je fais volontairement un move impossible pour entrer dans la boucle
             while move_blanc not in self.plateau.legal_moves:
-                input_blanc = jB.rentre_case(self.plateau)
-                move_blanc = chess.Move(chess.parse_square(input_blanc[0]),
+                try:
+                    
+                    input_blanc = jB.rentre_case(self.plateau)
+                    move_blanc = chess.Move(chess.parse_square(input_blanc[0]),
                                         chess.parse_square(input_blanc[1]))
+                except ValueError:
+                    print("Mauvais format")
+                
             self.plateau.push(move_blanc)
 
             # Tour du noir
@@ -44,7 +49,7 @@ class Joueur():
         res = input(
             f"\nTOUR:{self.couleur}, Entrez la coordonnée ACTUELLE de la pièce et la NOUVELLE, (ex : a2 a3) \n"
         )
-        return res.split(" ")
+        return res.lower().split(" ")
 
 
 if __name__ == "__main__":
