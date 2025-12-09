@@ -3,24 +3,30 @@ import os
 
 
 class Jeu():
+    """Gère une partie d'échecs avec son plateau et les règles du jeu."""
 
-    def __init__(self):
+    def __init__(self) -> None:
+        """Initialise une nouvelle partie avec un plateau d'échecs vierge."""
         self.plateau = chess.Board()
 
-    def reset_plateau(self):
+    def reset_plateau(self) -> None:
+        """Réinitialise le plateau à son état initial."""
         self.plateau = chess.Board()
 
-    def affiche_plateau(self):
+    def affiche_plateau(self) -> None:
+        """Affiche l'état actuel du plateau."""
         print(self.plateau)
         
-    def revanche(self,jB,jN) -> None:
+    def revanche(self, jB: 'Joueur', jN: 'Joueur') -> None:
+        """Propose une revanche aux joueurs et lance une nouvelle partie si acceptée."""
         if(jB.revanche() and jN.revanche()):
             self.reset_plateau()
             self.lance_partie(jB,jN) # je fais expres de les inverser
         else:
             print(f"La partie s'achève avec un score de {jN.get_score()} - {jB.get_score()}")
             
-    def lance_partie(self, jB, jN) -> None:
+    def lance_partie(self, jB: 'Joueur', jN: 'Joueur') -> None:
+        """Lance et gère une partie complète entre deux joueurs."""
         while not self.plateau.is_checkmate() and not self.plateau.is_stalemate():
             for j in [jB,jN]:
                 move = chess.Move(chess.parse_square("a2"), chess.parse_square("a8"))  # je fais volontairement un move impossible pour entrer dans la boucle
@@ -53,25 +59,23 @@ class Jeu():
         self.revanche(jB,jN)            
 
 class Joueur():
+    """Représente un joueur d'échecs avec sa couleur et son score."""
 
-    def __init__(self, couleur):
+    def __init__(self, couleur: str) -> None:
+        """Initialise un joueur avec sa couleur."""
         self.couleur = couleur
         self.score = 0
         
-    def inc_score(self) -> None :
-        """
-        Incrémente le score de 1         
-        """
+    def inc_score(self) -> None:
+        """Incrémente le score de 1."""
         self.score+=1
     
     def get_score(self) -> int:
+        """Retourne le score actuel du joueur."""
         return self.score
 
     def revanche(self) -> bool:
-        """
-        Demande au joueur si il veux prendre sa revanche 
-        returns : True si il prend sa revanche, False sinon
-        """
+        """Demande au joueur s'il veut prendre sa revanche. Retourne True si oui, False sinon."""
         while True:
             demande = input("Voulez vous prendre votre revanche ? (O)ui/(N)on ")
             match demande.lower():
@@ -82,7 +86,8 @@ class Joueur():
                 case _default:
                     print(f"{demande.lower()} n'est pas une reponse attendu")
 
-    def rentre_case(self, plateau: Jeu) -> str:
+    def rentre_case(self, plateau: chess.Board) -> list[str]:
+        """Demande au joueur de saisir son coup. Retourne une liste [case_départ, case_arrivée]."""
         os.system('cls' if os.name == 'nt' else 'clear')
         print(plateau)
         res = input(
