@@ -16,7 +16,8 @@ class Jeu():
     def affiche_plateau(self) -> None:
         """Affiche l'état actuel du plateau."""
         print(self.plateau)
-        
+    def plateau_to_str(self) -> str:
+        return self.plateau.__str__
     def revanche(self, jB: 'Joueur', jN: 'Joueur') -> None:
         """Propose une revanche aux joueurs et lance une nouvelle partie si acceptée."""
         if(jB.revanche() and jN.revanche()):
@@ -34,8 +35,7 @@ class Jeu():
                     try:
                         input = j.rentre_case(self.plateau)
                         move = chess.Move(chess.parse_square(input[0]),chess.parse_square(input[1]))
-                    except ValueError:
-                        print("Mauvais format")
+                    except ValueError:                        print("Mauvais format")
                 self.plateau.push(move)
                 if j == jB and (self.plateau.is_checkmate() or self.plateau.is_stalemate()):
                     break
