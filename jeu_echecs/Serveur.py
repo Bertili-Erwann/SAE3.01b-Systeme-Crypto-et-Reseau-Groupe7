@@ -1,6 +1,6 @@
 from threading import Thread 
 import socket
-from .Jeu import Jeu, Joueur
+from Jeu import Jeu, Joueur
 class Server:
 
     def __init__(self):
@@ -13,15 +13,12 @@ class Server:
         sock.listen(10)
         jeu = Jeu()
         listThreads = []                                   
-        while True:
-            if len(listThreads)<2: #Limite a 2 joueur 
-                cli, _ = sock.accept()
-                sess = Session(self, cli, jeu,Joueur("blanc" if len(listThreads) == 0 else "noir" ))
-                listThreads.append(sess)
-            else:
-                listThreads[0].start()
-                listThreads[1].start()
-                jeu.lance_partie(listThreads[0], listThreads[1])
+        while len(listThreads)<2:
+            cli, _ = sock.accept()
+            sess = Session(self, cli, jeu,Joueur("blanc" if len(listThreads) == 0 else "noir" ))
+            listThreads.append(sess)
+        listThreads[0].start()
+        listThreads[1].start()
 
 class Session(Thread):
     def __init__(self,server, sock,jeu:Jeu,joueur:Joueur):
@@ -32,17 +29,17 @@ class Session(Thread):
         self.file = sock.makefile(mode="rw")
         self.joueur = joueur
     def run(self):
-        while True:
-            line = self.file.readline().strip() 
-            self.file.write(self.jeu.plateau_to_str())
-            self.writea
+        while not self.jeu.plateau.is_checkmate() and not self.jeu.plateau.is_stalemate():
+            self.file.write(f"{self.jeu.plateau}\nTOUR:{self.joueur.couleur}, Entrez la coordonnée ACTUELLE de la pièce et la NOUVELLE, (ex : a2 a3) \n")
+            line = self.file.readline()
+            self.jeu.faire_coup(str(line[:5]).split(" "))
             self.file.flush()
         self.file.close()
         self.socket.shutdown(socket.SHUT_RDWR)
         self.socket.close()
-
+    def getJoueur(self):
+        return self.joueur
         
 if __name__ == "__main__":
-    
     serv = Server()
-    serv.mainServer(4444)
+    serv.mainServer(2460)

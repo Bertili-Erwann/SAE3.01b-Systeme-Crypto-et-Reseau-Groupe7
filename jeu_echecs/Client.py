@@ -15,5 +15,5 @@ def client(host, port):
     sock.shutdown(socket.SHUT_RDWR)
     sock.close()
 
-
-client("localhost", 4444)
+if __name__ == "__main__":
+    client("localhost", 2460)
