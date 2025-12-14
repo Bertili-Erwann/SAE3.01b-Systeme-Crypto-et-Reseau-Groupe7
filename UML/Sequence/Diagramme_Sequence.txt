@@ -1,0 +1,39 @@
+//https://sequencediagram.org/
+
+title Boucle Principale - Jeu d'Échecs
+
+participant Main
+participant Jeu
+participant Joueur
+participant Board
+
+Main->Jeu:new Jeu()
+Main->Jeu:lance_partie(blanc, noir)
+
+loop Tant que pas de mat ou pat
+    Jeu->Joueur:rentre_case(board)
+    Joueur-->Jeu:[case_départ, case_arrivée]
+    Jeu->Board:push(move)
+    Jeu->Board:is_checkmate() ou is_stalemate() ?
+end
+
+Jeu->Board:outcome()
+Board-->Jeu:résultat
+
+alt Blanc gagne par mat
+    Jeu->Joueur:inc_score()
+else Noir gagne par mat
+    Jeu->Joueur:inc_score()
+else Pat
+    note over Jeu:Match nulle
+end
+
+Jeu->Joueur:revanche() ?
+Joueur-->Jeu:oui/non
+
+alt Les deux veulent rejouer
+    Jeu->Board:reset()
+    Jeu->Jeu:lance_partie(noir, blanc)
+else Au moins un refuse
+    Jeu->Main:fin de partie
+end
