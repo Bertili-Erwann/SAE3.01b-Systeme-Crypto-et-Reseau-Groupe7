@@ -1,0 +1,62 @@
+title Boucle Serveur-Client - Jeu d'Échecs
+
+participant Client1
+participant Client2
+participant Serveur
+participant Jeu
+participant Board
+
+Client1->Serveur:connexion()
+Serveur-->Client1:accepté
+Client2->Serveur:connexion()
+Serveur-->Client2:accepté
+
+Serveur->Jeu:new Jeu()
+Serveur->Jeu:lance_partie(client1, client2)
+
+loop Tant que pas de mat ou pat
+    Serveur->Client1:demande_coup()
+    Client1->Client1:rentre_case()
+    Client1-->Serveur:[case_départ, case_arrivée]
+    Serveur->Board:push(move)
+    Serveur->Client1:envoie état board
+    Serveur->Client2:envoie état board
+    Serveur->Board:is_checkmate() ou is_stalemate() ?
+    
+    alt Partie continue
+        Serveur->Client2:demande_coup()
+        Client2->Client2:rentre_case()
+        Client2-->Serveur:[case_départ, case_arrivée]
+        Serveur->Board:push(move)
+        Serveur->Client1:envoie état board
+        Serveur->Client2:envoie état board
+        Serveur->Board:is_checkmate() ou is_stalemate() ?
+    end
+end
+
+Serveur->Board:outcome()
+Board-->Serveur:résultat
+
+alt Client1 gagne
+    Serveur->Client1:victoire
+    Serveur->Client2:défaite
+else Client2 gagne
+    Serveur->Client1:défaite
+    Serveur->Client2:victoire
+else Pat
+    Serveur->Client1:match nul
+    Serveur->Client2:match nul
+end
+
+Serveur->Client1:revanche() ?
+Client1-->Serveur:oui/non
+Serveur->Client2:revanche() ?
+Client2-->Serveur:oui/non
+
+alt Les deux veulent rejouer
+    Serveur->Board:reset()
+    Serveur->Jeu:lance_partie(client2, client1)
+else Au moins un refuse
+    Serveur->Client1:déconnexion
+    Serveur->Client2:déconnexion
+end
