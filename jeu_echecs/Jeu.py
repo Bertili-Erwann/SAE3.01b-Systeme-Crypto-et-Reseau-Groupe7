@@ -69,8 +69,30 @@ class Jeu:
 
         self.revanche(jB, jN)
 
-    def faire_coup(self, input):
-        chess.Move(chess.parse_square(input[0]), chess.parse_square(input[1]))
+    def faire_coup(self, input, tour):
+        if (
+            self.plateau.turn
+            and tour == "blanc"
+            or not self.plateau.turn
+            and tour == "noir"
+        ):
+            move = chess.Move(
+                chess.parse_square(input[0]), chess.parse_square(input[1])
+            )
+            if move not in self.plateau.legal_moves:
+                raise CoupIllegalException()
+            else:
+                self.plateau.push(move)
+        else:
+            raise AttendTonTourException()
+
+
+class CoupIllegalException(Exception):
+    pass
+
+
+class AttendTonTourException(Exception):
+    pass
 
 
 class Joueur:
