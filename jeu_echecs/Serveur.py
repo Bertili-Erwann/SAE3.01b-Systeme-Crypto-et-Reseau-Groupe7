@@ -9,19 +9,60 @@ import os
 class Server:
 
     def __init__(self):
-        self.counter = 0
+        self.running = False
+        self.server_socket = None
+        self.matchmaker = None
+        self.active_sessions = []
+        self.sessions_lock = Lock()
 
     def mainServer(self, port):
-        sock = socket.socket()
-        sock.bind(("0.0.0.0", port))
-        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        sock.listen(10)
-        self.matchmaker = MatchMaker()
+        self.server_socket = socket.socket()
+        self.server_socket.bind(("0.0.0.0", port))
+        self.server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self.server_socket.listen(10)
+        self.matchmaker = MatchMaker(self)
         self.matchmaker.start()
-        while True:
-            cli, _ = sock.accept()
-            sess = SessionRegister(self, cli)
-            sess.start()
+        self.running = True
+        print(f"Serveur démarré sur le port {port}")
+        while self.running:
+            try:
+                cli, _ = self.server_socket.accept()
+                sess = SessionRegister(self, cli)
+                sess.start()
+            except OSError:
+                break
+        print("Boucle serveur terminée")
+
+    def add_session(self, session):
+        with self.sessions_lock:
+            self.active_sessions.append(session)
+
+    def remove_session(self, session):
+        with self.sessions_lock:
+            if session in self.active_sessions:
+                self.active_sessions.remove(session)
+
+    def shutdown(self):
+        print("Arrêt du serveur...")
+        self.running = False
+        
+        # Arrêter le matchmaker
+        if self.matchmaker:
+            self.matchmaker.running = False
+        
+        # Fermer toutes les sessions actives
+        with self.sessions_lock:
+            for session in self.active_sessions:
+                session.socket.shutdown(socket.SHUT_RDWR)
+                session.socket.close()
+
+        # Fermer le socket serveur
+        if self.server_socket:
+            try:
+                self.server_socket.close()
+            except:
+                pass
+        print("Serveur arrêté")
 
     def get_matchmaker(self) -> "MatchMaker":
         return self.matchmaker
@@ -38,6 +79,7 @@ class SessionJeu(Thread):
         self.joueur = joueur
 
     def run(self):
+        self.server.add_session(self)
         self.file.write(f"start {self.joueur.couleur}\n")
         self.file.flush()
         while (
@@ -63,10 +105,7 @@ class SessionJeu(Thread):
                 case "leave":
                     self.file.write("OK\n")
                     self.file.flush()
-                    self.file.close()
-                    self.socket.shutdown(socket.SHUT_RDWR)
-                    self.socket.close()
-                    return
+                    self.server.shutdown()
                 case "play":
                     with self.jeu_condition:
                         try:
@@ -81,11 +120,10 @@ class SessionJeu(Thread):
                 case _default:
                     self.file.write(f"ERR : ne peux pas résoudre : '{line}'\n")
                     self.file.flush()
-
-        self.file.close()
-        self.socket.shutdown(socket.SHUT_RDWR)
-        self.socket.close()
-
+        self.server.shutdown()  
+        
+                
+    
     def getJoueur(self):
         return self.joueur
 
@@ -194,17 +232,19 @@ class SessionRegister(Thread):
 
 
 class MatchMaker(Thread):
-    def __init__(self):
+    def __init__(self, server):
         Thread.__init__(self)
+        self.server = server
         self.joueurs_idle = []
         self.lock = Lock()
+        self.running = True
 
     def ajt_thread(self, joueur: Thread) -> None:
         with self.lock:
             self.joueurs_idle.append(joueur)
 
     def run(self):
-        while True:
+        while self.running:
             with self.lock:
                 if len(self.joueurs_idle) >= 2:
                     list_tmp = []
