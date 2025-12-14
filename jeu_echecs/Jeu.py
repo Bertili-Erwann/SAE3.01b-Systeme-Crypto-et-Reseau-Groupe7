@@ -2,7 +2,7 @@ import chess
 import os
 
 
-class Jeu():
+class Jeu:
     """Gère une partie d'échecs avec son plateau et les règles du jeu."""
 
     def __init__(self) -> None:
@@ -18,11 +18,11 @@ class Jeu():
         print(self.plateau)
 
     def plateau_to_str(self) -> str:
-        return self.plateau.__repr__ 
+        return self.plateau.__repr__
 
-    def revanche(self, jB: 'Joueur', jN: 'Joueur') -> None:
+    def revanche(self, jB: "Joueur", jN: "Joueur") -> None:
         """Propose une revanche aux joueurs et lance une nouvelle partie si acceptée."""
-        if (jB.revanche() and jN.revanche()):
+        if jB.revanche() and jN.revanche():
             self.reset_plateau()
             self.lance_partie(jB, jN)
         else:
@@ -30,10 +30,9 @@ class Jeu():
                 f"La partie s'achève avec un score de {jN.get_score()} - {jB.get_score()}"
             )
 
-    def lance_partie(self, jB: 'Joueur', jN: 'Joueur') -> None:
+    def lance_partie(self, jB: "Joueur", jN: "Joueur") -> None:
         """Lance et gère une partie complète entre deux joueurs."""
-        while not self.plateau.is_checkmate(
-        ) and not self.plateau.is_stalemate():
+        while not self.plateau.is_checkmate() and not self.plateau.is_stalemate():
             for j in [jB, jN]:
                 move = chess.Move(
                     chess.parse_square("a2"), chess.parse_square("a8")
@@ -41,16 +40,18 @@ class Jeu():
                 while move not in self.plateau.legal_moves:
                     try:
                         input = j.rentre_case(self.plateau)
-                        move = chess.Move(chess.parse_square(input[0]),
-                                          chess.parse_square(input[1]))
+                        move = chess.Move(
+                            chess.parse_square(input[0]), chess.parse_square(input[1])
+                        )
                     except ValueError:
                         print("Mauvais format")
                 self.plateau.push(move)
-                if j == jB and (self.plateau.is_checkmate()
-                                or self.plateau.is_stalemate()):
+                if j == jB and (
+                    self.plateau.is_checkmate() or self.plateau.is_stalemate()
+                ):
                     break
 
-        #Le resultat du match
+        # Le resultat du match
         resultat = self.plateau.outcome()
         match resultat.termination:
             case chess.Termination.CHECKMATE:
@@ -68,12 +69,11 @@ class Jeu():
 
         self.revanche(jB, jN)
 
-    def faire_coup(self,input):
-        chess.Move(chess.parse_square(input[0]),
-                          chess.parse_square(input[1]))
+    def faire_coup(self, input):
+        chess.Move(chess.parse_square(input[0]), chess.parse_square(input[1]))
 
 
-class Joueur():
+class Joueur:
     """Représente un joueur d'échecs avec sa couleur et son score."""
 
     def __init__(self, couleur: str) -> None:
@@ -92,8 +92,7 @@ class Joueur():
     def revanche(self) -> bool:
         """Demande au joueur s'il veut prendre sa revanche. Retourne True si oui, False sinon."""
         while True:
-            demande = input(
-                "Voulez vous prendre votre revanche ? (O)ui/(N)on ")
+            demande = input("Voulez vous prendre votre revanche ? (O)ui/(N)on ")
             match demande.lower():
                 case "o" | "oui":
                     return True
@@ -104,7 +103,7 @@ class Joueur():
 
     def rentre_case(self, plateau: chess.Board) -> list[str]:
         """Demande au joueur de saisir son coup. Retourne une liste [case_départ, case_arrivée]."""
-        os.system('cls' if os.name == 'nt' else 'clear')
+        os.system("cls" if os.name == "nt" else "clear")
         print(plateau)
         res = input(
             f"\nTOUR:{self.couleur}, Entrez la coordonnée ACTUELLE de la pièce et la NOUVELLE, (ex : a2 a3) \n"
