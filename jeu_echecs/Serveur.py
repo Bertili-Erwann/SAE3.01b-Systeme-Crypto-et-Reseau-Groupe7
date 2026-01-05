@@ -88,19 +88,19 @@ class SessionJeu(Thread):
             not self.jeu.plateau.is_checkmate() and not self.jeu.plateau.is_stalemate()
         ):
             with self.jeu_condition:
-                # Attendre que ce soit notre tour
-                while ("blanc" if self.jeu.plateau.turn else "noir") != self.joueur.couleur:
-                    self.file.write(f"WAIT: C'est au tour de {('blanc' if self.jeu.plateau.turn else 'noir')}\n")
-                    self.file.flush()
-                    self.jeu_condition.wait()
-                
-                # C'est notre tour
-                print(self.jeu.plateau)
+                # Toujours envoyer le plateau pour que le client l'affiche puis decide si c'est son tour
                 plateau_str = str(self.jeu.plateau).replace("\n", "|")
+                current_color = "blanc" if self.jeu.plateau.turn else "noir"
                 self.file.write(f"PLATEAU:{plateau_str}\n")
                 self.file.flush()
-                self.file.write(f"TOUR:{self.joueur.couleur}\n")
+                self.file.write(f"TOUR:{current_color}\n")
                 self.file.flush()
+
+                if current_color != self.joueur.couleur:
+                    self.file.write(f"WAIT:C'est au tour de {current_color}\n")
+                    self.file.flush()
+                    self.jeu_condition.wait()
+                    continue
                 
             line = self.file.readline().strip().split(" ")
             match line[0]:
