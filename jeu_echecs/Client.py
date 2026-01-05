@@ -7,24 +7,25 @@ def client(host, port):
     sock = socket.socket()
     sock.connect((host, port))
     f = sock.makefile(mode="rw")
-    est_enregistrer = False
-    while not est_enregistrer:
+    connecte = False
+    while not connecte:
         log = input(
             "Bienvenue à Term Chess Online\n[1] Se connecter\n[2] Créer un compte\n[0] Quitter\n"
         )
         match log:
             case "1":
-                while not est_enregistrer:
-                    est_enregistrer = connexion(f)
+                connecte = connexion(f)
 
             case "2":
-                while not est_enregistrer:
-                    est_enregistrer = crea_compte(f)
+                crea_compte(f)
+
             case "0":
                 print("Aurevoir")
                 f.close()
                 sock.shutdown(socket.SHUT_RDWR)
                 sock.close()
+                return
+
             case _default:
                 print(f"on ne peut pas résoudre {log}")
     fini = False
@@ -83,10 +84,13 @@ def crea_compte(file) -> bool:
         print("Bien mettre le login et le password")
         return False
 
-    file.write(f"register {rep[0]} {rep[1]}\n")
+    login = rep[0].strip()
+    mdp = rep[1].strip()
+    file.write(f"register {login} {mdp}\n")
     file.flush()
     response = file.readline().strip()
-    return not response.startswith("ERR")
+    print(response)
+    return response.startswith("OK")
 
 
 def connexion(file):
@@ -95,10 +99,13 @@ def connexion(file):
         print("Bien mettre le login et le password")
         return False
 
-    file.write(f"connect {rep[0]} {rep[1]}\n")
+    login = rep[0].strip()
+    mdp = rep[1].strip()
+    file.write(f"connect {login} {mdp}\n")
     file.flush()
     response = file.readline().strip()
-    return not response.startswith("ERR")
+    print(response)
+    return response.startswith("OK")
 
 
 if __name__ == "__main__":
