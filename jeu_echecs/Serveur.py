@@ -5,6 +5,8 @@ from Jeu import Jeu, Joueur, CoupIllegalException, AttendTonTourException
 import csv
 import os
 
+BD_FILEPATH = os.path.join(os.path.dirname(__file__), "bdtmp.csv")
+
 
 class Server:
 
@@ -148,8 +150,8 @@ class SessionRegister(Thread):
     @staticmethod
     def ecrireUser(login: str, mdp: str) -> None:
         with SessionRegister._write_lock:
-            file_exists = os.path.isfile("bdtmp.csv")
-            with open("bdtmp.csv", "a", newline="") as csvfile:
+            file_exists = os.path.isfile(BD_FILEPATH)
+            with open(BD_FILEPATH, "a", newline="") as csvfile:
                 writer = csv.DictWriter(csvfile, fieldnames=["login", "password"])
                 if not file_exists or csvfile.tell() == 0:
                     writer.writeheader()
@@ -159,7 +161,7 @@ class SessionRegister(Thread):
     def lireuser(login: str, mdp: str) -> bool:
         with SessionRegister._write_lock:
             try:
-                with open("bdtmp.csv", "r", newline="") as file:
+                with open(BD_FILEPATH, "r", newline="") as file:
                     reader = csv.DictReader(file)
                     if reader.fieldnames is None or set(reader.fieldnames) < {
                         "login",
@@ -184,51 +186,68 @@ class SessionRegister(Thread):
 
     def run(self):
         while True:
-            line = self.file.readline().strip().split(" ")
+            raw = self.file.readline()
+            if not raw:
+                break
+            line = raw.strip().split(" ")
+            if not line or not line[0]:
+                self.file.write("ERR: Commande vide\n")
+                self.file.flush()
+                continue
             match line[0]:
                 case "register":
-                    print("1")
-                    bonLog = SessionRegister.verifLogin(line[1])
-                    bonMdp = SessionRegister.verifMdp(line[2])
-                    print("2")
+                    if len(line) < 3:
+                        self.file.write("ERR: Format attendu: register <login> <password>\n")
+                        self.file.flush()
+                        continue
+                    login = line[1].strip()
+                    mdp = line[2].strip()
+                    bonLog = SessionRegister.verifLogin(login)
+                    bonMdp = SessionRegister.verifMdp(mdp)
                     if bonLog and bonMdp:
-                        SessionRegister.ecrireUser(line[1], line[2])
+                        SessionRegister.ecrireUser(login, mdp)
                         self.file.write("OK: Compte créé avec succès\n")
                         self.file.flush()
-                        self.server.get_matchmaker().ajt_thread(self)
-                        break
+                        # On laisse le thread actif pour permettre un futur 'connect' depuis le menu client
                     elif not bonLog and bonMdp:
                         self.file.write(
-                            f"ERR: Le nom d'utilisateur ne doit pas contenir d'espaces et la longueur doit entre 3 et 10"
+                            "ERR: Le nom d'utilisateur ne doit pas contenir d'espaces et la longueur doit être entre 3 et 10\n"
                         )
                         self.file.flush()
 
                     elif bonLog and not bonMdp:
                         self.file.write(
-                            f"ERR: Le mot de passe doit être au moins de longueur 6"
+                            "ERR: Le mot de passe doit être au moins de longueur 6\n"
                         )
                         self.file.flush()
 
                     else:
                         self.file.write(
-                            f"ERR: Le nom d'utilisateur ne doit pas contenir d'espaces et la longueur doit entre 3 et 10 et le mot de passe doit être au moins de longueur 6"
+                            "ERR: Le nom d'utilisateur ne doit pas contenir d'espaces et la longueur doit être entre 3 et 10 et le mot de passe doit être au moins de longueur 6\n"
                         )
                         self.file.flush()
 
                 case "connect":
-                    if SessionRegister.lireuser(line[1], line[2]):
+                    if len(line) < 3:
+                        self.file.write("ERR: Format attendu: connect <login> <password>\n")
+                        self.file.flush()
+                        continue
+                    login = line[1].strip()
+                    mdp = line[2].strip()
+                    if SessionRegister.lireuser(login, mdp):
                         self.file.write("OK: Connexion réussie\n")
                         self.file.flush()
                         self.server.get_matchmaker().ajt_thread(self)
                         break
                     else:
-                        self.file.write("ERR: Connexion échouée \n")
+                        self.file.write("ERR: Connexion échouée\n")
                         self.file.flush()
 
                 case _default:
                     self.file.write(
-                        f"ERR: Commande {line[0]} de {line} n'a pas pu etre resolue"
+                        f"ERR: Commande {line[0]} de {line} n'a pas pu etre resolue\n"
                     )
+                    self.file.flush()
 
 
 class MatchMaker(Thread):

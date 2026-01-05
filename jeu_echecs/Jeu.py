@@ -31,6 +31,18 @@ class Jeu:
             raise AttendTonTourException()
 
 
+class Joueur:
+    """Représente un joueur avec sa couleur."""
+
+    def __init__(self, couleur: str) -> None:
+        if couleur not in ("blanc", "noir"):
+            raise ValueError("La couleur doit être 'blanc' ou 'noir'")
+        self.couleur = couleur
+
+    def __repr__(self) -> str:
+        return f"Joueur({self.couleur})"
+
+
 class CoupIllegalException(Exception):
     pass
 
