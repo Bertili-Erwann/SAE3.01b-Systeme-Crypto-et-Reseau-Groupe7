@@ -78,18 +78,23 @@ def client(host, port):
             time.sleep(0.3)
             continue  # Pas notre tour, on reboucle sans demander input
 
-        coup = input("[Position Actuelle] [Nouvelle Position]\n[0] Quitter\n").split(
-            " "
-        )
-        if coup[0] == "0":
-            f.write("leave\n")
-            f.flush()
-            fini = True
-        elif len(coup) != 2:
-            print("Veuillez respecter le format")
-        else:
-            f.write(f"play {coup[0]} {coup[1]}\n")
-            f.flush()
+        # Boucle pour redemander le coup jusqu'à ce qu'il soit valide
+        while True:
+            coup = input("[Position Actuelle] [Nouvelle Position]\n[0] Quitter\n").split(
+                " "
+            )
+            if coup[0] == "0":
+                f.write("leave\n")
+                f.flush()
+                fini = True
+                break
+            elif len(coup) != 2:
+                print("Veuillez respecter le format")
+                # Continue la boucle interne pour redemander
+            else:
+                f.write(f"play {coup[0]} {coup[1]}\n")
+                f.flush()
+                break  # Sortir de la boucle interne pour relire le serveur
     f.close()
     sock.shutdown(socket.SHUT_RDWR)
     sock.close()

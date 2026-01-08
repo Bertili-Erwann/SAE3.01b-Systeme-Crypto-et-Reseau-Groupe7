@@ -1,7 +1,7 @@
 from threading import Thread, Lock, Condition
 import socket
 import time
-from Jeu import Jeu, Joueur, CoupIllegalException, AttendTonTourException
+from Jeu import Jeu, Joueur, CoupIllegalException, AttendTonTourException, CoupMalFormate
 import csv
 import os
 
@@ -113,11 +113,17 @@ class SessionJeu(Thread):
                         try:
                             self.jeu.faire_coup([line[1], line[2]], self.joueur.couleur)
                             self.jeu_condition.notify_all()
+                        except CoupMalFormate:
+                            self.file.write("ERR: Format de coup invalide. Utilisez le format: e2 e4\n")
+                            self.file.flush()
                         except CoupIllegalException:
                             self.file.write("ERR: coup illégal\n")
                             self.file.flush()
                         except AttendTonTourException:
                             self.file.write("ERR: Attendez votre tour\n")
+                            self.file.flush()
+                        except IndexError:
+                            self.file.write("ERR: Format de coup invalide. Utilisez le format: e2 e4\n")
                             self.file.flush()
                 case _default:
                     self.file.write(f"ERR : ne peux pas résoudre : '{line}'\n")
@@ -211,7 +217,7 @@ class SessionRegister(Thread):
                         # On laisse le thread actif pour permettre un futur 'connect' depuis le menu client
                     elif not bonLog and bonMdp:
                         self.file.write(
-                            "ERR: Le nom d'utilisateur ne doit pas contenir d'espaces et la longueur doit être entre 3 et 10\n"
+                            "   : Le nom d'utilisateur ne doit pas contenir d'espaces et la longueur doit être entre 3 et 10\n"
                         )
                         self.file.flush()
 
