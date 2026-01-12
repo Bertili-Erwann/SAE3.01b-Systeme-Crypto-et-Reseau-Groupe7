@@ -1,12 +1,18 @@
 #!/usr/bin/env python3
 import socket
 import time
+import os
+
+
+def _clear_screen():
+    os.system("cls" if os.name == "nt" else "clear")
 
 
 def client(host, port):
     sock = socket.socket()
     sock.connect((host, port))
     f = sock.makefile(mode="rw")
+    my_color = None
     connecte = False
     while not connecte:
         log = input(
@@ -39,21 +45,32 @@ def client(host, port):
                 break
             if line.startswith("PLATEAU:"):
                 plateau = line[8:].strip().replace("|", "\n")
+                _clear_screen()
                 print(plateau)
             elif line.startswith("TOUR:"):
-                print(line, end="")
-                doit_jouer = True
-                break
-            elif line.startswith("WAIT:"):
-                print(line, end="")
+                current = line[5:].strip()
+                if my_color is None:
+                    # my_color est déterminé par le premier message start, récupéré plus bas
+                    pass
+                doit_jouer = my_color is not None and current == my_color
+                if not doit_jouer:
+                    # On attend que l'autre joue, on continue à écouter
+                    continue
+                else:
+                    break
+            elif line.startswith("WAIT:" ):
+                # Déjà affiché, on boucle pour réécouter
                 doit_jouer = False
-                break
+                continue
             elif line.startswith("ERR:"):
                 print(line, end="")
             else:
                 print(line, end="")
                 if line.startswith("start"):
-                    break
+                    parts = line.strip().split(" ")
+                    if len(parts) >= 2:
+                        my_color = parts[1].strip()
+                    continue
         if fini:
             break
         
@@ -61,18 +78,23 @@ def client(host, port):
             time.sleep(0.3)
             continue  # Pas notre tour, on reboucle sans demander input
 
-        coup = input("[Position Actuelle] [Nouvelle Position]\n[0] Quitter\n").split(
-            " "
-        )
-        if coup[0] == "0":
-            f.write("leave\n")
-            f.flush()
-            fini = True
-        elif len(coup) != 2:
-            print("Veuillez respecter le format")
-        else:
-            f.write(f"play {coup[0]} {coup[1]}\n")
-            f.flush()
+        # Boucle pour redemander le coup jusqu'à ce qu'il soit valide
+        while True:
+            coup = input("[Position Actuelle] [Nouvelle Position]\n[0] Quitter\n").split(
+                " "
+            )
+            if coup[0] == "0":
+                f.write("leave\n")
+                f.flush()
+                fini = True
+                break
+            elif len(coup) != 2:
+                print("Veuillez respecter le format")
+                # Continue la boucle interne pour redemander
+            else:
+                f.write(f"play {coup[0]} {coup[1]}\n")
+                f.flush()
+                break  # Sortir de la boucle interne pour relire le serveur
     f.close()
     sock.shutdown(socket.SHUT_RDWR)
     sock.close()

@@ -14,15 +14,26 @@ class Jeu:
         self.plateau = chess.Board()
 
     def faire_coup(self, input, tour):
+        if len(input) != 2:
+            raise CoupMalFormate()
+        
+        for case in input:
+            if len(case) != 2 or not case[0].isalpha() or not case[1].isdigit():
+                raise CoupMalFormate()
+        
         if (
             self.plateau.turn
             and tour == "blanc"
             or not self.plateau.turn
             and tour == "noir"
         ):
-            move = chess.Move(
-                chess.parse_square(input[0]), chess.parse_square(input[1])
-            )
+            try:
+                move = chess.Move(
+                    chess.parse_square(input[0]), chess.parse_square(input[1])
+                )
+            except Exception:
+                raise CoupMalFormate()
+            
             if move not in self.plateau.legal_moves:
                 raise CoupIllegalException()
             else:
@@ -48,6 +59,10 @@ class CoupIllegalException(Exception):
 
 
 class AttendTonTourException(Exception):
+    pass
+
+
+class CoupMalFormate(Exception):
     pass
 
 # f2 f3

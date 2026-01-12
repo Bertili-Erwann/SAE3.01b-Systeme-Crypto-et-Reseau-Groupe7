@@ -1,7 +1,7 @@
 from threading import Thread, Lock, Condition
 import socket
 import time
-from Jeu import Jeu, Joueur, CoupIllegalException, AttendTonTourException
+from Jeu import Jeu, Joueur, CoupIllegalException, AttendTonTourException, CoupMalFormate
 import csv
 import os
 
@@ -88,19 +88,19 @@ class SessionJeu(Thread):
             not self.jeu.plateau.is_checkmate() and not self.jeu.plateau.is_stalemate()
         ):
             with self.jeu_condition:
-                # Attendre que ce soit notre tour
-                while ("blanc" if self.jeu.plateau.turn else "noir") != self.joueur.couleur:
-                    self.file.write(f"WAIT: C'est au tour de {('blanc' if self.jeu.plateau.turn else 'noir')}\n")
-                    self.file.flush()
-                    self.jeu_condition.wait()
-                
-                # C'est notre tour
-                print(self.jeu.plateau)
+                # Toujours envoyer le plateau pour que le client l'affiche puis decide si c'est son tour
                 plateau_str = str(self.jeu.plateau).replace("\n", "|")
+                current_color = "blanc" if self.jeu.plateau.turn else "noir"
                 self.file.write(f"PLATEAU:{plateau_str}\n")
                 self.file.flush()
-                self.file.write(f"TOUR:{self.joueur.couleur}\n")
+                self.file.write(f"TOUR:{current_color}\n")
                 self.file.flush()
+
+                if current_color != self.joueur.couleur:
+                    self.file.write(f"WAIT:C'est au tour de {current_color}\n")
+                    self.file.flush()
+                    self.jeu_condition.wait()
+                    continue
                 
             line = self.file.readline().strip().split(" ")
             match line[0]:
@@ -113,11 +113,17 @@ class SessionJeu(Thread):
                         try:
                             self.jeu.faire_coup([line[1], line[2]], self.joueur.couleur)
                             self.jeu_condition.notify_all()
+                        except CoupMalFormate:
+                            self.file.write("ERR: Format de coup invalide. Utilisez le format: e2 e4\n")
+                            self.file.flush()
                         except CoupIllegalException:
                             self.file.write("ERR: coup illégal\n")
                             self.file.flush()
                         except AttendTonTourException:
                             self.file.write("ERR: Attendez votre tour\n")
+                            self.file.flush()
+                        except IndexError:
+                            self.file.write("ERR: Format de coup invalide. Utilisez le format: e2 e4\n")
                             self.file.flush()
                 case _default:
                     self.file.write(f"ERR : ne peux pas résoudre : '{line}'\n")
@@ -211,7 +217,7 @@ class SessionRegister(Thread):
                         # On laisse le thread actif pour permettre un futur 'connect' depuis le menu client
                     elif not bonLog and bonMdp:
                         self.file.write(
-                            "ERR: Le nom d'utilisateur ne doit pas contenir d'espaces et la longueur doit être entre 3 et 10\n"
+                            "   : Le nom d'utilisateur ne doit pas contenir d'espaces et la longueur doit être entre 3 et 10\n"
                         )
                         self.file.flush()
 
