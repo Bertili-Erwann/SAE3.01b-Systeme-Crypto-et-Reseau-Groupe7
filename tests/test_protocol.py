@@ -21,7 +21,7 @@ def test_protocol_simple():
     cli_pub_str = ecdh.export_key_str(cli_pub)
     print(f"CLIENT: PubKey exportée: {cli_pub_str[:20]}...")
 
-    print("\n--- 2. Handshake (Simulé) ---")
+    print("\n--- 2. Partage de clé ---")
     
     # Echange simulé via Socket
     # Le serveur envoie sa clé publique au client
