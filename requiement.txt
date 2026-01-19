@@ -1,0 +1,4 @@
+chess==1.11.2
+pycryptodome==3.23.0
+pycryptodomex==3.23.0
+tinyec==0.4.0

@@ -4,6 +4,9 @@ import time
 from Jeu import Jeu, Joueur, CoupIllegalException, AttendTonTourException, CoupMalFormate
 import csv
 import os
+import sys
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from crypto import ecdh
 
 BD_FILEPATH = os.path.join(os.path.dirname(__file__), "bdtmp.csv")
 
@@ -16,6 +19,10 @@ class Server:
         self.matchmaker = None
         self.active_sessions = []
         self.sessions_lock = Lock()
+        
+        # Génération des clés ECC
+        self.private_key, self.public_key = ecdh.generer_cles()
+        self.public_key_str = ecdh.export_key_str(self.public_key)
 
     def mainServer(self, port):
         self.server_socket = socket.socket()
@@ -71,7 +78,7 @@ class Server:
 
 
 class SessionJeu(Thread):
-    def __init__(self, server, sock, jeu: Jeu, joueur: Joueur, jeu_condition: Condition):
+    def __init__(self, server, sock, jeu: Jeu, joueur: Joueur, jeu_condition: Condition, secret_key):
         Thread.__init__(self)
         self.server = server
         self.socket = sock
@@ -79,11 +86,15 @@ class SessionJeu(Thread):
         self.jeu_condition = jeu_condition
         self.file = sock.makefile(mode="rw")
         self.joueur = joueur
+        self.secret_key = secret_key
+
+    def _send(self, msg):
+        self.file.write(ecdh.chiffrer(msg, self.secret_key) + "\n")
+        self.file.flush()
 
     def run(self):
         self.server.add_session(self)
-        self.file.write(f"start {self.joueur.couleur}\n")
-        self.file.flush()
+        self._send(f"start#{self.joueur.couleur}")
         while (
             not self.jeu.plateau.is_checkmate() and not self.jeu.plateau.is_stalemate()
         ):
@@ -91,43 +102,51 @@ class SessionJeu(Thread):
                 # Toujours envoyer le plateau pour que le client l'affiche puis decide si c'est son tour
                 plateau_str = str(self.jeu.plateau).replace("\n", "|")
                 current_color = "blanc" if self.jeu.plateau.turn else "noir"
-                self.file.write(f"PLATEAU:{plateau_str}\n")
-                self.file.flush()
-                self.file.write(f"TOUR:{current_color}\n")
-                self.file.flush()
+                self._send(f"PLATEAU:{plateau_str}\n")
+                self._send(f"TOUR:{current_color}\n")
 
                 if current_color != self.joueur.couleur:
-                    self.file.write(f"WAIT:C'est au tour de {current_color}\n")
-                    self.file.flush()
+                    self._send(f"WAIT:C'est au tour de {current_color}\n")
                     self.jeu_condition.wait()
                     continue
                 
-            line = self.file.readline().strip().split(" ")
+            raw = self.file.readline()
+            if not raw:
+                # Connection closed
+                break
+            
+            try:
+                decrypted_line = ecdh.dechiffrer(raw.strip(), self.secret_key)
+            except Exception:
+                continue
+
+            if not decrypted_line:
+                continue
+
+            line = decrypted_line.strip().split("#")
+            
             match line[0]:
                 case "leave":
-                    self.file.write("OK\n")
-                    self.file.flush()
+                    self._send("OK\n")
                     self.server.shutdown()
                 case "play":
+                    if len(line) < 3:
+                         self._send("ERR: Format de coup invalide. Utilisez le format: play#e2#e4\n")
+                         continue
                     with self.jeu_condition:
                         try:
                             self.jeu.faire_coup([line[1], line[2]], self.joueur.couleur)
                             self.jeu_condition.notify_all()
                         except CoupMalFormate:
-                            self.file.write("ERR: Format de coup invalide. Utilisez le format: e2 e4\n")
-                            self.file.flush()
+                            self._send("ERR: Format de coup invalide. Utilisez le format: e2 e4\n")
                         except CoupIllegalException:
-                            self.file.write("ERR: coup illégal\n")
-                            self.file.flush()
+                            self._send("ERR: coup illégal\n")
                         except AttendTonTourException:
-                            self.file.write("ERR: Attendez votre tour\n")
-                            self.file.flush()
+                            self._send("ERR: Attendez votre tour\n")
                         except IndexError:
-                            self.file.write("ERR: Format de coup invalide. Utilisez le format: e2 e4\n")
-                            self.file.flush()
+                            self._send("ERR: Format de coup invalide. Utilisez le format: e2 e4\n")
                 case _default:
-                    self.file.write(f"ERR : ne peux pas résoudre : '{line}'\n")
-                    self.file.flush()
+                    self._send(f"ERR : ne peux pas résoudre : '{line}'\n")
         self.server.shutdown()  
         
                 
@@ -142,6 +161,11 @@ class SessionRegister(Thread):
         self.server = server
         self.socket = sock
         self.file = sock.makefile(mode="rw")
+        self.secret_key = None
+
+    def _send(self, msg):
+        self.file.write(ecdh.chiffrer(msg, self.secret_key) + "\n")
+        self.file.flush()
 
     _write_lock = Lock()
 
@@ -191,20 +215,40 @@ class SessionRegister(Thread):
         return self.server
 
     def run(self):
+        try:
+            self.file.write(self.server.public_key_str + "\n")
+            self.file.flush()
+            
+            client_pub_key_str = self.file.readline().strip()
+            if not client_pub_key_str:
+                return
+            self.client_pub_key = ecdh.import_key_from_str(client_pub_key_str)
+            self.secret_key = ecdh.deriver_secret(self.server.private_key, self.client_pub_key)
+        except Exception as e:
+            print(f"Erreur handshake session register: {e}")
+            return
+
         while True:
             raw = self.file.readline()
             if not raw:
                 break
-            line = raw.strip().split(" ")
+            
+            try:
+                decrypted_line = ecdh.dechiffrer(raw.strip(), self.secret_key)
+            except Exception:
+                continue
+
+            if not decrypted_line:
+                continue
+
+            line = decrypted_line.strip().split("#")
             if not line or not line[0]:
-                self.file.write("ERR: Commande vide\n")
-                self.file.flush()
+                self._send("ERR: Commande vide\n")
                 continue
             match line[0]:
                 case "register":
                     if len(line) < 3:
-                        self.file.write("ERR: Format attendu: register <login> <password>\n")
-                        self.file.flush()
+                        self._send("ERR: Format attendu: register#<login>#<password>\n")
                         continue
                     login = line[1].strip()
                     mdp = line[2].strip()
@@ -212,48 +256,41 @@ class SessionRegister(Thread):
                     bonMdp = SessionRegister.verifMdp(mdp)
                     if bonLog and bonMdp:
                         SessionRegister.ecrireUser(login, mdp)
-                        self.file.write("OK: Compte créé avec succès\n")
-                        self.file.flush()
+                        self._send("OK: Compte créé avec succès\n")
                         # On laisse le thread actif pour permettre un futur 'connect' depuis le menu client
                     elif not bonLog and bonMdp:
-                        self.file.write(
+                        self._send(
                             "   : Le nom d'utilisateur ne doit pas contenir d'espaces et la longueur doit être entre 3 et 10\n"
                         )
-                        self.file.flush()
 
                     elif bonLog and not bonMdp:
-                        self.file.write(
+                        self._send(
                             "ERR: Le mot de passe doit être au moins de longueur 6\n"
                         )
-                        self.file.flush()
 
                     else:
-                        self.file.write(
+                        self._send(
                             "ERR: Le nom d'utilisateur ne doit pas contenir d'espaces et la longueur doit être entre 3 et 10 et le mot de passe doit être au moins de longueur 6\n"
                         )
-                        self.file.flush()
 
                 case "connect":
                     if len(line) < 3:
-                        self.file.write("ERR: Format attendu: connect <login> <password>\n")
-                        self.file.flush()
+                        self._send("ERR: Format attendu: connect#<login>#<password>\n")
                         continue
                     login = line[1].strip()
                     mdp = line[2].strip()
                     if SessionRegister.lireuser(login, mdp):
-                        self.file.write("OK: Connexion réussie\n")
-                        self.file.flush()
+                        self._send("OK: Connexion réussie\n")
                         self.server.get_matchmaker().ajt_thread(self)
                         break
                     else:
-                        self.file.write("ERR: Connexion échouée\n")
-                        self.file.flush()
+                        self._send("ERR: Connexion échouée\n")
 
                 case _default:
-                    self.file.write(
-                        f"ERR: Commande {line[0]} de {line} n'a pas pu etre resolue\n"
+                    # Avoid logging password if possible, but line contains it.
+                    self._send(
+                        f"ERR: Commande {line[0]} n'a pas pu etre resolue\n"
                     )
-                    self.file.flush()
 
 
 class MatchMaker(Thread):
@@ -283,6 +320,7 @@ class MatchMaker(Thread):
                             jeu,
                             Joueur("blanc" if i == 0 else "noir"),
                             jeu_condition,
+                            session_register.secret_key
                         )
                         list_tmp.append(sess)
                     [t.start() for t in list_tmp]
