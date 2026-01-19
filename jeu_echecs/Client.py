@@ -26,6 +26,8 @@ def client(host, port):
                 crea_compte(f)
 
             case "0":
+                f.write("quit\n")
+                f.flush()
                 print("Aurevoir")
                 f.close()
                 sock.shutdown(socket.SHUT_RDWR)
@@ -62,6 +64,56 @@ def client(host, port):
                 # Déjà affiché, on boucle pour réécouter
                 doit_jouer = False
                 continue
+            elif line.startswith("play_ad"):
+                parts = line.strip().split(" ")
+                if len(parts) >= 3:
+                    print(f"Adversaire a joué: {parts[1]} -> {parts[2]}")
+                continue
+            elif line.startswith("win"):
+                print("Vous avez gagné !")
+                rejouer = input("Voulez-vous rejouer? [replay/new] ou [0] pour quitter\n").strip()
+                if rejouer in ["replay", "new"]:
+                    f.write(f"{rejouer}\n")
+                    f.flush()
+                    resp = f.readline().strip()
+                    if resp == "OK":
+                        my_color = None
+                        continue
+                else:
+                    f.write("quit\n")
+                    f.flush()
+                    fini = True
+                    break
+            elif line.startswith("lose"):
+                print("Vous avez perdu...")
+                rejouer = input("Voulez-vous rejouer? [replay/new] ou [0] pour quitter\n").strip()
+                if rejouer in ["replay", "new"]:
+                    f.write(f"{rejouer}\n")
+                    f.flush()
+                    resp = f.readline().strip()
+                    if resp == "OK":
+                        my_color = None
+                        continue
+                else:
+                    f.write("quit\n")
+                    f.flush()
+                    fini = True
+                    break
+            elif line.startswith("draw"):
+                print("Match nul !")
+                rejouer = input("Voulez-vous rejouer? [replay/new] ou [0] pour quitter\n").strip()
+                if rejouer in ["replay", "new"]:
+                    f.write(f"{rejouer}\n")
+                    f.flush()
+                    resp = f.readline().strip()
+                    if resp == "OK":
+                        my_color = None
+                        continue
+                else:
+                    f.write("quit\n")
+                    f.flush()
+                    fini = True
+                    break
             elif line.startswith("ERR:"):
                 print(line, end="")
             else:
@@ -69,7 +121,14 @@ def client(host, port):
                 if line.startswith("start"):
                     parts = line.strip().split(" ")
                     if len(parts) >= 2:
-                        my_color = parts[1].strip()
+                        couleur_recue = parts[1].strip()
+                        # Convertir w/b en blanc/noir pour usage interne
+                        if couleur_recue == "w":
+                            my_color = "blanc"
+                        elif couleur_recue == "b":
+                            my_color = "noir"
+                        else:
+                            my_color = couleur_recue
                     continue
         if fini:
             break

@@ -79,10 +79,15 @@ class SessionJeu(Thread):
         self.jeu_condition = jeu_condition
         self.file = sock.makefile(mode="rw")
         self.joueur = joueur
+        self.autre_session = None
+    
+    def set_autre_session(self, autre):
+        self.autre_session = autre
 
     def run(self):
         self.server.add_session(self)
-        self.file.write(f"start {self.joueur.couleur}\n")
+        couleur_code = "w" if self.joueur.couleur == "blanc" else "b"
+        self.file.write(f"start {couleur_code}\n")
         self.file.flush()
         while (
             not self.jeu.plateau.is_checkmate() and not self.jeu.plateau.is_stalemate()
@@ -107,11 +112,22 @@ class SessionJeu(Thread):
                 case "leave":
                     self.file.write("OK\n")
                     self.file.flush()
-                    self.server.shutdown()
+                    self.jeu.declarer_abandon(self.joueur.couleur)
+                    self.file.write("lose\n")
+                    self.file.flush()
+                    break
+                case "quit":
+                    self.file.write("OK\n")
+                    self.file.flush()
+                    break
                 case "play":
                     with self.jeu_condition:
                         try:
                             self.jeu.faire_coup([line[1], line[2]], self.joueur.couleur)
+                            # Notifier l'autre joueur du coup joué
+                            if self.autre_session:
+                                self.autre_session.file.write(f"play_ad {line[1]} {line[2]}\n")
+                                self.autre_session.file.flush()
                             self.jeu_condition.notify_all()
                         except CoupMalFormate:
                             self.file.write("ERR: Format de coup invalide. Utilisez le format: e2 e4\n")
@@ -128,7 +144,29 @@ class SessionJeu(Thread):
                 case _default:
                     self.file.write(f"ERR : ne peux pas résoudre : '{line}'\n")
                     self.file.flush()
-        self.server.shutdown()  
+        
+        # Fin de la partie - vérifier le résultat
+        if self.jeu.plateau.is_checkmate():
+            gagnant = "noir" if self.jeu.plateau.turn else "blanc"
+            if gagnant == self.joueur.couleur:
+                self.file.write("win\n")
+            else:
+                self.file.write("lose\n")
+            self.file.flush()
+        elif self.jeu.plateau.is_stalemate():
+            self.file.write("draw\n")
+            self.file.flush()
+        
+        # Attendre la décision de rejouer ou non
+        demande_rejouer = self.file.readline().strip()
+        if demande_rejouer in ["replay", "new"]:
+            self.jeu.reset_plateau()
+            self.file.write("OK\n")
+            self.file.flush()
+            # Relancer une nouvelle partie
+            self.run()
+        
+        self.server.remove_session(self)  
         
                 
     
@@ -212,12 +250,12 @@ class SessionRegister(Thread):
                     bonMdp = SessionRegister.verifMdp(mdp)
                     if bonLog and bonMdp:
                         SessionRegister.ecrireUser(login, mdp)
-                        self.file.write("OK: Compte créé avec succès\n")
+                        self.file.write("OK\n")
                         self.file.flush()
                         # On laisse le thread actif pour permettre un futur 'connect' depuis le menu client
                     elif not bonLog and bonMdp:
                         self.file.write(
-                            "   : Le nom d'utilisateur ne doit pas contenir d'espaces et la longueur doit être entre 3 et 10\n"
+                            "ERR: Le nom d'utilisateur ne doit pas contenir d'espaces et la longueur doit être entre 3 et 10\n"
                         )
                         self.file.flush()
 
@@ -241,13 +279,18 @@ class SessionRegister(Thread):
                     login = line[1].strip()
                     mdp = line[2].strip()
                     if SessionRegister.lireuser(login, mdp):
-                        self.file.write("OK: Connexion réussie\n")
+                        self.file.write("OK\n")
                         self.file.flush()
                         self.server.get_matchmaker().ajt_thread(self)
                         break
                     else:
                         self.file.write("ERR: Connexion échouée\n")
                         self.file.flush()
+                
+                case "quit":
+                    self.file.write("OK\n")
+                    self.file.flush()
+                    break
 
                 case _default:
                     self.file.write(
@@ -285,6 +328,9 @@ class MatchMaker(Thread):
                             jeu_condition,
                         )
                         list_tmp.append(sess)
+                    # Définir les références croisées entre les deux joueurs
+                    list_tmp[0].set_autre_session(list_tmp[1])
+                    list_tmp[1].set_autre_session(list_tmp[0])
                     [t.start() for t in list_tmp]
             time.sleep(0.1)
 
