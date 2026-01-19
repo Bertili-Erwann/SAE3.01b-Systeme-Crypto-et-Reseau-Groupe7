@@ -12,6 +12,10 @@ class Jeu:
     def reset_plateau(self) -> None:
         """Réinitialise le plateau à son état initial."""
         self.plateau = chess.Board()
+    
+    def declarer_abandon(self, couleur):
+        """Déclare un abandon pour le joueur de la couleur donnée."""
+        self.perdant = couleur
 
     def faire_coup(self, input, tour):
         if len(input) != 2:

@@ -5,6 +5,7 @@ from Jeu import Jeu, Joueur, CoupIllegalException, AttendTonTourException, CoupM
 import csv
 import os
 import sys
+
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from crypto import ecdh
 
@@ -19,8 +20,6 @@ class Server:
         self.matchmaker = None
         self.active_sessions = []
         self.sessions_lock = Lock()
-        
-        # Génération des clés ECC
         self.private_key, self.public_key = ecdh.generer_cles()
         self.public_key_str = ecdh.export_key_str(self.public_key)
 
@@ -55,17 +54,14 @@ class Server:
         print("Arrêt du serveur...")
         self.running = False
         
-        # Arrêter le matchmaker
         if self.matchmaker:
             self.matchmaker.running = False
         
-        # Fermer toutes les sessions actives
         with self.sessions_lock:
             for session in self.active_sessions:
                 session.socket.shutdown(socket.SHUT_RDWR)
                 session.socket.close()
 
-        # Fermer le socket serveur
         if self.server_socket:
             try:
                 self.server_socket.close()
@@ -86,35 +82,43 @@ class SessionJeu(Thread):
         self.jeu_condition = jeu_condition
         self.file = sock.makefile(mode="rw")
         self.joueur = joueur
+        self.autre_session = None
         self.secret_key = secret_key
+    
+    def set_autre_session(self, autre):
+        self.autre_session = autre
 
     def _send(self, msg):
-        self.file.write(ecdh.chiffrer(msg, self.secret_key) + "\n")
-        self.file.flush()
+        try:
+            encrypted = ecdh.chiffrer(msg, self.secret_key)
+            self.file.write(encrypted + "\n")
+            self.file.flush()
+        except Exception:
+            pass
 
     def run(self):
         self.server.add_session(self)
-        self._send(f"start#{self.joueur.couleur}")
+        couleur_code = "w" if self.joueur.couleur == "blanc" else "b"
+        self._send(f"start#{couleur_code}")
+        
         while (
             not self.jeu.plateau.is_checkmate() and not self.jeu.plateau.is_stalemate()
         ):
             with self.jeu_condition:
-                # Toujours envoyer le plateau pour que le client l'affiche puis decide si c'est son tour
                 plateau_str = str(self.jeu.plateau).replace("\n", "|")
                 current_color = "blanc" if self.jeu.plateau.turn else "noir"
-                self._send(f"PLATEAU:{plateau_str}\n")
-                self._send(f"TOUR:{current_color}\n")
+                self._send(f"PLATEAU:{plateau_str}")
+                self._send(f"TOUR:{current_color}")
 
                 if current_color != self.joueur.couleur:
-                    self._send(f"WAIT:C'est au tour de {current_color}\n")
+                    self._send(f"WAIT:C'est au tour de {current_color}")
                     self.jeu_condition.wait()
                     continue
                 
             raw = self.file.readline()
             if not raw:
-                # Connection closed
                 break
-            
+
             try:
                 decrypted_line = ecdh.dechiffrer(raw.strip(), self.secret_key)
             except Exception:
@@ -127,30 +131,57 @@ class SessionJeu(Thread):
             
             match line[0]:
                 case "leave":
-                    self._send("OK\n")
-                    self.server.shutdown()
+                    self._send("OK")
+                    self.jeu.declarer_abandon(self.joueur.couleur)
+                    self._send("lose")
+                    break
+                case "quit":
+                    self._send("OK")
+                    break
                 case "play":
                     if len(line) < 3:
-                         self._send("ERR: Format de coup invalide. Utilisez le format: play#e2#e4\n")
-                         continue
+                        self._send("ERR: Format de coup invalide")
+                        continue
                     with self.jeu_condition:
                         try:
                             self.jeu.faire_coup([line[1], line[2]], self.joueur.couleur)
+                            if self.autre_session:
+                                self.autre_session._send(f"play_ad#{line[1]}#{line[2]}")
                             self.jeu_condition.notify_all()
                         except CoupMalFormate:
-                            self._send("ERR: Format de coup invalide. Utilisez le format: e2 e4\n")
+                            self._send("ERR: Format de coup invalide. Utilisez le format: e2 e4")
                         except CoupIllegalException:
-                            self._send("ERR: coup illégal\n")
+                            self._send("ERR: coup illégal")
                         except AttendTonTourException:
-                            self._send("ERR: Attendez votre tour\n")
+                            self._send("ERR: Attendez votre tour")
                         except IndexError:
-                            self._send("ERR: Format de coup invalide. Utilisez le format: e2 e4\n")
+                            self._send("ERR: Format de coup invalide. Utilisez le format: e2 e4")
                 case _default:
-                    self._send(f"ERR : ne peux pas résoudre : '{line}'\n")
-        self.server.shutdown()  
+                    self._send(f"ERR : ne peux pas résoudre : '{line}'")
+        
+        if self.jeu.plateau.is_checkmate():
+            gagnant = "noir" if self.jeu.plateau.turn else "blanc"
+            if gagnant == self.joueur.couleur:
+                self._send("win")
+            else:
+                self._send("lose")
+        elif self.jeu.plateau.is_stalemate():
+            self._send("draw")
+        
+        raw_rejouer = self.file.readline()
+        if raw_rejouer:
+            try:
+                demande_rejouer = ecdh.dechiffrer(raw_rejouer.strip(), self.secret_key).strip()
+                if demande_rejouer in ["replay", "new"]:
+                    self.jeu.reset_plateau()
+                    self._send("OK")
+                    self.run()
+            except:
+                pass
+        
+        self.server.remove_session(self)  
         
                 
-    
     def getJoueur(self):
         return self.joueur
 
@@ -163,11 +194,15 @@ class SessionRegister(Thread):
         self.file = sock.makefile(mode="rw")
         self.secret_key = None
 
-    def _send(self, msg):
-        self.file.write(ecdh.chiffrer(msg, self.secret_key) + "\n")
-        self.file.flush()
-
     _write_lock = Lock()
+
+    def _send(self, msg):
+        try:
+            encrypted = ecdh.chiffrer(msg, self.secret_key)
+            self.file.write(encrypted + "\n")
+            self.file.flush()
+        except Exception:
+            pass
 
     @staticmethod
     def verifLogin(log: str) -> bool:
@@ -243,12 +278,13 @@ class SessionRegister(Thread):
 
             line = decrypted_line.strip().split("#")
             if not line or not line[0]:
-                self._send("ERR: Commande vide\n")
+                self._send("ERR: Commande vide")
                 continue
+
             match line[0]:
                 case "register":
                     if len(line) < 3:
-                        self._send("ERR: Format attendu: register#<login>#<password>\n")
+                        self._send("ERR: Format attendu: register#<login>#<password>")
                         continue
                     login = line[1].strip()
                     mdp = line[2].strip()
@@ -256,40 +292,40 @@ class SessionRegister(Thread):
                     bonMdp = SessionRegister.verifMdp(mdp)
                     if bonLog and bonMdp:
                         SessionRegister.ecrireUser(login, mdp)
-                        self._send("OK: Compte créé avec succès\n")
-                        # On laisse le thread actif pour permettre un futur 'connect' depuis le menu client
+                        self._send("OK")
                     elif not bonLog and bonMdp:
                         self._send(
-                            "   : Le nom d'utilisateur ne doit pas contenir d'espaces et la longueur doit être entre 3 et 10\n"
+                            "ERR: Le nom d'utilisateur ne doit pas contenir d'espaces et la longueur doit être entre 3 et 10"
                         )
-
                     elif bonLog and not bonMdp:
                         self._send(
-                            "ERR: Le mot de passe doit être au moins de longueur 6\n"
+                            "ERR: Le mot de passe doit être au moins de longueur 6"
                         )
-
                     else:
                         self._send(
-                            "ERR: Le nom d'utilisateur ne doit pas contenir d'espaces et la longueur doit être entre 3 et 10 et le mot de passe doit être au moins de longueur 6\n"
+                            "ERR: Le nom d'utilisateur ne doit pas contenir d'espaces et la longueur doit être entre 3 et 10 et le mot de passe doit être au moins de longueur 6"
                         )
 
                 case "connect":
                     if len(line) < 3:
-                        self._send("ERR: Format attendu: connect#<login>#<password>\n")
+                        self._send("ERR: Format attendu: connect#<login>#<password>")
                         continue
                     login = line[1].strip()
                     mdp = line[2].strip()
                     if SessionRegister.lireuser(login, mdp):
-                        self._send("OK: Connexion réussie\n")
+                        self._send("OK")
                         self.server.get_matchmaker().ajt_thread(self)
                         break
                     else:
-                        self._send("ERR: Connexion échouée\n")
+                        self._send("ERR: Connexion échouée")
+                
+                case "quit":
+                    self._send("OK")
+                    break
 
                 case _default:
-                    # Avoid logging password if possible, but line contains it.
                     self._send(
-                        f"ERR: Commande {line[0]} n'a pas pu etre resolue\n"
+                        f"ERR: Commande {line[0]} de {line} n'a pas pu etre resolue"
                     )
 
 
@@ -323,6 +359,9 @@ class MatchMaker(Thread):
                             session_register.secret_key
                         )
                         list_tmp.append(sess)
+                    
+                    list_tmp[0].set_autre_session(list_tmp[1])
+                    list_tmp[1].set_autre_session(list_tmp[0])
                     [t.start() for t in list_tmp]
             time.sleep(0.1)
 
