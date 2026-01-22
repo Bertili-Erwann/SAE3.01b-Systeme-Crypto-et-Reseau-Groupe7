@@ -1,6 +1,7 @@
 from threading import Thread, Lock, Condition
 import socket
 import time
+import chess
 from Jeu import Jeu, Joueur, CoupIllegalException, AttendTonTourException, CoupMalFormate
 import csv
 import os
@@ -99,7 +100,7 @@ class SessionJeu(Thread):
     def run(self):
         self.server.add_session(self)
         couleur_code = "w" if self.joueur.couleur == "blanc" else "b"
-        self._send(f"start#{couleur_code}")
+        self._send(f"start {couleur_code}")
         
         while (
             not self.jeu.plateau.is_checkmate() and not self.jeu.plateau.is_stalemate()
@@ -127,7 +128,7 @@ class SessionJeu(Thread):
             if not decrypted_line:
                 continue
 
-            line = decrypted_line.strip().split("#")
+            line = decrypted_line.strip().split(" ")
             
             match line[0]:
                 case "leave":
@@ -138,6 +139,44 @@ class SessionJeu(Thread):
                 case "quit":
                     self._send("OK")
                     break
+                case "promote":
+                    if len(line) < 3:
+                        self._send("ERR: Format de promotion invalide. Utilisez: promote case piece")
+                        continue
+                    with self.jeu_condition:
+                        try:
+                            case_src = line[1]
+                            piece_char = line[2].lower()
+                            
+                            piece_map = {
+                                'q': chess.QUEEN,
+                                'r': chess.ROOK,
+                                'b': chess.BISHOP,
+                                'n': chess.KNIGHT
+                            }
+                            
+                            if piece_char not in piece_map:
+                                self._send("ERR: Pièce invalide. Utilisez q (Queen), r (Rook), b (Bishop), ou n (Knight)")
+                                continue
+                            
+                            from_square = chess.parse_square(case_src)
+                            promotion_piece = piece_map[piece_char]
+                            
+                            move_found = None
+                            for legal_move in self.jeu.plateau.legal_moves:
+                                if legal_move.from_square == from_square and legal_move.promotion == promotion_piece:
+                                    move_found = legal_move
+                                    break
+                            
+                            if move_found:
+                                self.jeu.plateau.push(move_found)
+                                if self.autre_session:
+                                    self.autre_session._send(f"play_ad {chess.square_name(move_found.from_square)} {chess.square_name(move_found.to_square)}")
+                                self.jeu_condition.notify_all()
+                            else:
+                                self._send("ERR: Aucun coup de promotion valide depuis cette case")
+                        except Exception as e:
+                            self._send(f"ERR: Erreur lors de la promotion: {str(e)}")
                 case "play":
                     if len(line) < 3:
                         self._send("ERR: Format de coup invalide")
@@ -146,7 +185,7 @@ class SessionJeu(Thread):
                         try:
                             self.jeu.faire_coup([line[1], line[2]], self.joueur.couleur)
                             if self.autre_session:
-                                self.autre_session._send(f"play_ad#{line[1]}#{line[2]}")
+                                self.autre_session._send(f"play_ad {line[1]} {line[2]}")
                             self.jeu_condition.notify_all()
                         except CoupMalFormate:
                             self._send("ERR: Format de coup invalide. Utilisez le format: e2 e4")
@@ -251,14 +290,20 @@ class SessionRegister(Thread):
 
     def run(self):
         try:
-            self.file.write(self.server.public_key_str + "\n")
+            self.file.write(f"sync {self.server.public_key_str}\n")
             self.file.flush()
             
-            client_pub_key_str = self.file.readline().strip()
-            if not client_pub_key_str:
+            sync_line = self.file.readline().strip()
+            if not sync_line or not sync_line.startswith("sync "):
                 return
+            
+            client_pub_key_str = sync_line[5:]
             self.client_pub_key = ecdh.import_key_from_str(client_pub_key_str)
             self.secret_key = ecdh.deriver_secret(self.server.private_key, self.client_pub_key)
+            
+            self.file.write("OK\n")
+            self.file.flush()
+            
         except Exception as e:
             print(f"Erreur handshake session register: {e}")
             return
@@ -276,7 +321,7 @@ class SessionRegister(Thread):
             if not decrypted_line:
                 continue
 
-            line = decrypted_line.strip().split("#")
+            line = decrypted_line.strip().split(" ")
             if not line or not line[0]:
                 self._send("ERR: Commande vide")
                 continue
@@ -284,7 +329,7 @@ class SessionRegister(Thread):
             match line[0]:
                 case "register":
                     if len(line) < 3:
-                        self._send("ERR: Format attendu: register#<login>#<password>")
+                        self._send("ERR: Format attendu: register <login> <password>")
                         continue
                     login = line[1].strip()
                     mdp = line[2].strip()
@@ -308,7 +353,7 @@ class SessionRegister(Thread):
 
                 case "connect":
                     if len(line) < 3:
-                        self._send("ERR: Format attendu: connect#<login>#<password>")
+                        self._send("ERR: Format attendu: connect <login> <password>")
                         continue
                     login = line[1].strip()
                     mdp = line[2].strip()
