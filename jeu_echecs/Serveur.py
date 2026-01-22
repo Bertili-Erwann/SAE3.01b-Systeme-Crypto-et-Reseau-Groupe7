@@ -102,6 +102,8 @@ class SessionJeu(Thread):
         couleur_code = "w" if self.joueur.couleur == "blanc" else "b"
         self._send(f"start {couleur_code}")
         
+        abandon = False
+        
         while (
             not self.jeu.plateau.is_checkmate() and not self.jeu.plateau.is_stalemate()
         ):
@@ -135,9 +137,15 @@ class SessionJeu(Thread):
                     self._send("OK")
                     self.jeu.declarer_abandon(self.joueur.couleur)
                     self._send("lose")
+                    if self.autre_session:
+                        self.autre_session._send("win")
+                        with self.jeu_condition:
+                            self.jeu_condition.notify_all()
+                    abandon = True
                     break
                 case "quit":
                     self._send("OK")
+                    abandon = True
                     break
                 case "promote":
                     if len(line) < 3:
@@ -198,23 +206,24 @@ class SessionJeu(Thread):
                 case _default:
                     self._send(f"ERR : ne peux pas résoudre : '{line}'")
         
-        if self.jeu.plateau.is_checkmate():
-            gagnant = "noir" if self.jeu.plateau.turn else "blanc"
-            if gagnant == self.joueur.couleur:
-                self._send("win")
-            else:
-                self._send("lose")
-        elif self.jeu.plateau.is_stalemate():
-            self._send("draw")
-        
-        raw_rejouer = self.file.readline()
-        if raw_rejouer:
+        if not abandon:
+            if self.jeu.plateau.is_checkmate():
+                gagnant = "noir" if self.jeu.plateau.turn else "blanc"
+                if gagnant == self.joueur.couleur:
+                    self._send("win")
+                else:
+                    self._send("lose")
+            elif self.jeu.plateau.is_stalemate():
+                self._send("draw")
+            
             try:
-                demande_rejouer = ecdh.dechiffrer(raw_rejouer.strip(), self.secret_key).strip()
-                if demande_rejouer in ["replay", "new"]:
-                    self.jeu.reset_plateau()
-                    self._send("OK")
-                    self.run()
+                raw_rejouer = self.file.readline()
+                if raw_rejouer:
+                    demande_rejouer = ecdh.dechiffrer(raw_rejouer.strip(), self.secret_key).strip()
+                    if demande_rejouer in ["replay", "new"]:
+                        self.jeu.reset_plateau()
+                        self._send("OK")
+                        self.run()
             except:
                 pass
         
