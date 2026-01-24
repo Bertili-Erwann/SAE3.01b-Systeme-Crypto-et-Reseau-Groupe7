@@ -160,11 +160,11 @@ class SessionJeu(Thread):
                                 'q': chess.QUEEN,
                                 'r': chess.ROOK,
                                 'b': chess.BISHOP,
-                                'n': chess.KNIGHT
+                                'k': chess.KNIGHT
                             }
                             
                             if piece_char not in piece_map:
-                                self._send("ERR: Pièce invalide. Utilisez q (Queen), r (Rook), b (Bishop), ou n (Knight)")
+                                self._send("ERR: Pièce invalide. Utilisez q (Queen), r (Rook), b (Bishop), ou k (Knight)")
                                 continue
                             
                             from_square = chess.parse_square(case_src)
@@ -178,6 +178,7 @@ class SessionJeu(Thread):
                             
                             if move_found:
                                 self.jeu.plateau.push(move_found)
+                                self._send("OK")
                                 if self.autre_session:
                                     self.autre_session._send(f"play_ad {chess.square_name(move_found.from_square)} {chess.square_name(move_found.to_square)}")
                                 self.jeu_condition.notify_all()
@@ -192,6 +193,7 @@ class SessionJeu(Thread):
                     with self.jeu_condition:
                         try:
                             self.jeu.faire_coup([line[1], line[2]], self.joueur.couleur)
+                            self._send("OK")
                             if self.autre_session:
                                 self.autre_session._send(f"play_ad {line[1]} {line[2]}")
                             self.jeu_condition.notify_all()
