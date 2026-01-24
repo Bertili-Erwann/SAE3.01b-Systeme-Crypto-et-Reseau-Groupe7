@@ -26,10 +26,8 @@ class Jeu:
                 raise CoupMalFormate()
         
         if (
-            self.plateau.turn
-            and tour == "blanc"
-            or not self.plateau.turn
-            and tour == "noir"
+            (self.plateau.turn and tour == "blanc")
+            or (not self.plateau.turn and tour == "noir")
         ):
             try:
                 move = chess.Move(

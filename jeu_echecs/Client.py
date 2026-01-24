@@ -22,18 +22,22 @@ def client(host, port):
     print("Génération des clés ECDH...")
     priv_key, pub_key = ecdh.generer_cles()
 
-    # Handshake ECDH
     try:
-        # Réception de la clé publique du serveur
-        server_key_str = f.readline().strip()
-        if not server_key_str:
-            print("Erreur: Pas de clé reçue du serveur")
+        sync_line = f.readline().strip()
+        if not sync_line or not sync_line.startswith("sync "):
+            print("Erreur: Commande sync non reçue du serveur")
             return
+        
+        server_key_str = sync_line[5:]
         server_pub_key = ecdh.import_key_from_str(server_key_str)
 
-        # Envoi de notre clé publique
-        f.write(ecdh.export_key_str(pub_key) + "\n")
+        f.write(f"sync {ecdh.export_key_str(pub_key)}\n")
         f.flush()
+        
+        ok_response = f.readline().strip()
+        if ok_response != "OK":
+            print(f"Erreur: Réponse attendue 'OK', reçu '{ok_response}'")
+            return
         
         secret_key = ecdh.deriver_secret(priv_key, server_pub_key)
         
@@ -87,23 +91,19 @@ def client(host, port):
                 break
             
             if line.startswith("PLATEAU:"):
-                # Le serveur envoie PLATEAU:xxxxxx
                 plateau = line[8:].strip().replace("|", "\n")
                 _clear_screen()
                 print(plateau)
             elif line.startswith("TOUR:"):
                 current = line[5:].strip()
                 if my_color is None:
-                    # my_color est déterminé par le premier message start, récupéré plus bas
                     pass
                 doit_jouer = my_color is not None and current == my_color
                 if not doit_jouer:
-                    # On attend que l'autre joue, on continue à écouter
                     continue
                 else:
                     break
             elif line.startswith("WAIT:" ):
-                # Déjà affiché, on boucle pour réécouter
                 doit_jouer = False
                 continue
             elif line.startswith("play_ad"):
@@ -159,12 +159,11 @@ def client(host, port):
             elif line.startswith("ERR:"):
                 print(line)
             else:
-                print(line) # Affiche les OK ou autres messages
+                print(line)
                 if line.startswith("start"):
-                    parts = line.strip().split("#")
+                    parts = line.strip().split(" ")
                     if len(parts) >= 2:
                         couleur_recue = parts[1].strip()
-                        # Convertir w/b en blanc/noir pour usage interne
                         if couleur_recue == "w":
                             my_color = "blanc"
                         elif couleur_recue == "b":
@@ -177,24 +176,23 @@ def client(host, port):
         
         if not doit_jouer:
             time.sleep(0.3)
-            continue  # Pas notre tour, on reboucle sans demander input
-
-        # Boucle pour redemander le coup jusqu'à ce qu'il soit valide
+            continue
         while True:
-            coup = input("[Position Actuelle] [Nouvelle Position]\n[0] Quitter\n").split(
+            coup = input("[Position Actuelle] [Nouvelle Position] ou [promote case piece]\n[0] Quitter\n").split(
                 " "
             )
             if coup[0] == "0":
-                send("leave") # format "leave"
+                send("leave")
                 fini = True
+                break
+            elif coup[0] == "promote" and len(coup) == 3:
+                send(f"promote {coup[1]} {coup[2]}")
                 break
             elif len(coup) != 2:
                 print("Veuillez respecter le format")
-                # Continue la boucle interne pour redemander
             else:
-                # Format: play#case1#case2
-                send(f"play#{coup[0]}#{coup[1]}")
-                break  # Sortir de la boucle interne pour relire le serveur
+                send(f"play {coup[0]} {coup[1]}")
+                break
     f.close()
     sock.shutdown(socket.SHUT_RDWR)
     sock.close()
@@ -208,8 +206,7 @@ def crea_compte(send_func, recv_func) -> bool:
 
     login = rep[0].strip()
     mdp = rep[1].strip()
-    # Format: register#login#mdp
-    send_func(f"register#{login}#{mdp}")
+    send_func(f"register {login} {mdp}")
     
     response = recv_func()
     if response:
@@ -226,8 +223,7 @@ def connexion(send_func, recv_func):
 
     login = rep[0].strip()
     mdp = rep[1].strip()
-    # Format: connect#login#mdp
-    send_func(f"connect#{login}#{mdp}")
+    send_func(f"connect {login} {mdp}")
     
     response = recv_func()
     if response:
